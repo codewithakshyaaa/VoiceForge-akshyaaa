@@ -20,23 +20,36 @@ export default function Call() {
 
   const [isCalibrationOpen, setIsCalibrationOpen] = React.useState(false);
   const [calibration, setCalibration] = React.useState(() => {
-    const savedX = localStorage.getItem("voiceforge:calibrationXOffset");
-    const savedY = localStorage.getItem("voiceforge:calibrationYOffset");
+  try {
+    const savedX     = localStorage.getItem("voiceforge:calibrationXOffset");
+    const savedY     = localStorage.getItem("voiceforge:calibrationYOffset");
     const savedScale = localStorage.getItem("voiceforge:calibrationScale");
+    const xOffset    = savedX     !== null ? parseInt(savedX, 10)    : 0;
+    const yOffset    = savedY     !== null ? parseInt(savedY, 10)    : 0;
+    const scale      = savedScale !== null ? parseFloat(savedScale)  : 1.0;
     return {
-      xOffset: savedX !== null ? parseInt(savedX, 10) : 0,
-      yOffset: savedY !== null ? parseInt(savedY, 10) : 0,
-      scale: savedScale !== null ? parseFloat(savedScale) : 1.0
+      xOffset: isNaN(xOffset) ? 0    : xOffset,
+      yOffset: isNaN(yOffset) ? 0    : yOffset,
+      scale:   isNaN(scale)   ? 1.0  : scale,
     };
-  });
+  } catch {
+    return { xOffset: 0, yOffset: 0, scale: 1.0 };
+  }
+});
 
   const handleCalibrationChange = (key, value) => {
-    setCalibration((prev) => {
-      const updated = { ...prev, [key]: value };
-      localStorage.setItem(`voiceforge:calibration${key.charAt(0).toUpperCase() + key.slice(1)}`, value.toString());
-      return updated;
-    });
-  };
+  if (typeof value !== "number" || isNaN(value)) return;
+  setCalibration((prev) => {
+    const updated = { ...prev, [key]: value };
+    try {
+      localStorage.setItem(
+        `voiceforge:calibration${key.charAt(0).toUpperCase() + key.slice(1)}`,
+        value.toString()
+      );
+    } catch { /* storage unavailable – continue without persisting */ }
+    return updated;
+  });
+};
 
   const handleResetCalibration = () => {
     const defaults = { xOffset: 0, yOffset: 0, scale: 1.0 };

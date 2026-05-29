@@ -13,7 +13,7 @@ export default function useTTS() {
       const response = await fetch("/api/voice/speak", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ text, voice_id: voiceId })
       });

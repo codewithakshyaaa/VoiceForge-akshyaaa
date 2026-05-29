@@ -6,6 +6,7 @@ import {
   getSavedProfiles,
 } from "../hooks/useVoiceClone.js";
 
+
 function AudioPlayback({ blob }) {
   const [audioUrl, setAudioUrl] = React.useState(null);
 
@@ -42,7 +43,6 @@ export default function Settings() {
     }
     loadProfiles();
   }, []);
-
 
   async function removeProfile(voiceId) {
     try {

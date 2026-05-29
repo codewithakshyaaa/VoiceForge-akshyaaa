@@ -2,7 +2,7 @@
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1";
 
 function getApiKey() {
-  return process.env.ELEVENLABS_API_KEY;
+  return process.env.ELEVENLABS_API_KEY?.trim();
 }
 
 function requireApiKey() {

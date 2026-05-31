@@ -66,16 +66,53 @@ const pendingStreams = new Map();
 
 export async function speak(request, response, next) {
   try {
-    const apiKey = requireApiKey();
-    const { text, voice_id: voiceId } = request.body;
+    const apiKey = requireApiKey(request);
+    const { text, voice_id: voiceId, voice_settings } = request.body;
 
     if (!text || !voiceId) {
       response.status(400).json({ error: "Both text and voice_id are required." });
       return;
     }
 
+    const defaultVoiceSettings = {
+      stability: 0.45,
+      similarity_boost: 0.8,
+      style: 0.2,
+      use_speaker_boost: true
+    };
+
+    const clamp01 = (v) => Math.min(1, Math.max(0, v));
+    const sanitizedSettings = {};
+    if (voice_settings && typeof voice_settings === "object") {
+      if (
+        typeof voice_settings.stability === "number" &&
+        Number.isFinite(voice_settings.stability)
+      ) {
+        sanitizedSettings.stability = clamp01(voice_settings.stability);
+      }
+      if (
+        typeof voice_settings.similarity_boost === "number" &&
+        Number.isFinite(voice_settings.similarity_boost)
+      ) {
+        sanitizedSettings.similarity_boost = clamp01(
+          voice_settings.similarity_boost
+        );
+      }
+      if (
+        typeof voice_settings.style === "number" &&
+        Number.isFinite(voice_settings.style)
+      ) {
+        sanitizedSettings.style = clamp01(voice_settings.style);
+      }
+      if (typeof voice_settings.use_speaker_boost === "boolean") {
+        sanitizedSettings.use_speaker_boost =
+          voice_settings.use_speaker_boost;
+      }
+    }
+
+    const mergedSettings = { ...defaultVoiceSettings, ...sanitizedSettings };
     const speechId = Math.random().toString(36).substring(2, 15);
-    pendingStreams.set(speechId, { text, voiceId, apiKey });
+    pendingStreams.set(speechId, { text, voiceId, apiKey, mergedSettings });
 
     // Set a timeout to clean up if the stream is never requested within 60s
     setTimeout(() => {
@@ -104,7 +141,7 @@ export async function streamSpeech(request, response, next) {
     // Clean up immediately after retrieving parameters to prevent memory leaks
     pendingStreams.delete(speechId);
 
-    const { text, voiceId, apiKey } = streamData;
+    const { text, voiceId, apiKey, mergedSettings } = streamData;
 
     const elevenResponse = await fetch(`${ELEVENLABS_BASE_URL}/text-to-speech/${voiceId}/stream`, {
       method: "POST",
@@ -116,12 +153,7 @@ export async function streamSpeech(request, response, next) {
       body: JSON.stringify({
         text,
         model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.8,
-          style: 0.2,
-          use_speaker_boost: true
-        }
+        voice_settings: mergedSettings
       })
     });
 

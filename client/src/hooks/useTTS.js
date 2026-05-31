@@ -10,12 +10,20 @@ export default function useTTS() {
     setStatus("speaking");
 
     try {
+      const defaultSettings = { stability: 0.45, similarity_boost: 0.8, style: 0.2 };
+      let voiceSettings;
+      try {
+        voiceSettings = JSON.parse(localStorage.getItem("voiceforge:voiceSettings")) || defaultSettings;
+      } catch {
+        voiceSettings = defaultSettings;
+      }
+
       const response = await fetch("/api/voice/speak", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text, voice_id: voiceId })
+        body: JSON.stringify({ text, voice_id: voiceId, voice_settings: voiceSettings })
       });
 
       if (!response.ok) {

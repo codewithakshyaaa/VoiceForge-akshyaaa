@@ -7,7 +7,7 @@ export default function useTTS() {
   const [error, setError] = React.useState("");
   const [audioUrl, setAudioUrl] = React.useState("");
 
-  async function speak({ text, voiceId }) {
+  async function speak({ text, voiceId, language_code}) {
     setError("");
     setStatus("speaking");
 
@@ -27,7 +27,12 @@ export default function useTTS() {
           "Content-Type": "application/json",
           "X-ElevenLabs-Api-Key": apiKey,
         },
-        body: JSON.stringify({ text, voice_id: voiceId, voice_settings: voiceSettings })
+        body: JSON.stringify({
+  text,
+  voice_id: voiceId,
+  language_code,
+  voice_settings: voiceSettings
+})
       });
 
       if (!response.ok) {

@@ -1,6 +1,7 @@
 // Defines VoiceForge voice cloning and speech generation API routes.
 import { Router } from "express";
-import { cloneVoice, speak, streamSpeech } from "../controllers/voiceController.js";
+import rateLimit from "express-rate-limit";
+import { cloneVoice, speak, streamSpeech, getStatus } from "../controllers/voiceController.js";
 import upload from "../middleware/upload.js";
 
 const router = Router();

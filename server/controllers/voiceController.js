@@ -64,13 +64,16 @@ function getApiKey(request) {
   return request.get("X-ElevenLabs-Api-Key") || process.env.ELEVENLABS_API_KEY;
 }
 
+// Read the key from the request header first (client-side override).
+// Fall back to the server's environment variable (ELEVENLABS_API_KEY) if not provided by the client.
 function requireApiKey(request) {
-  const apiKey = getApiKey(request);
+  const apiKey = request.get("X-ElevenLabs-Api-Key")?.trim() || process.env.ELEVENLABS_API_KEY?.trim();
   if (!apiKey) {
-    const error = new Error("Missing ElevenLabs API key. Add it to .env or Settings.");
-    error.status = 400;
+    const error = new Error(
+      "An ElevenLabs API key is required. Configure ELEVENLABS_API_KEY on the server or provide it in the X-ElevenLabs-Api-Key header."
+    );
+    error.status = 401;
     throw error;
-    // console.log(process.env.ELEVENLABS_API_KEY);
   }
   return apiKey;
 }
@@ -85,9 +88,22 @@ async function readElevenLabsError(response) {
   }
 }
 
+// Reduces a user-supplied upload filename to a safe value before it is sent
+// onward to ElevenLabs. Removes any directory components, then keeps only
+// alphanumerics, dot, hyphen, and underscore. Everything else, including null
+// bytes and path separators, is replaced with an underscore. Falls back to a
+// default name when the input is missing or sanitizes to an empty string.
+function sanitizeUploadFileName(originalName) {
+  const withoutPath = String(originalName || "").split(/[/\\]/).pop();
+  const cleaned = withoutPath
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/^\.+/, "")
+    .slice(0, 200);
+  return cleaned || "reference.webm";
+}
+
 export async function cloneVoice(request, response, next) {
   try {
-    const apiKey = requireApiKey(request);
     const audioFile = request.file;
 
     if (!audioFile) {
@@ -95,10 +111,27 @@ export async function cloneVoice(request, response, next) {
       return;
     }
 
+    // --- mock mode: return a deterministic fixture voice_id ---
+    if (getIsMock()) {
+      console.warn("[VoiceForge] MOCK_ELEVENLABS: skipping real voice clone, returning fixture.");
+      response.json({
+        voice_id: "mock-voice-id-00000000",
+        name: request.body.name || "VoiceForge Voice (mock)"
+      });
+      return;
+    }
+
+    const apiKey = requireApiKey(request);
+
     const formData = new FormData();
     formData.append("name", request.body.name || "VoiceForge Voice");
     formData.append("description", "Voice profile created locally by VoiceForge.");
-    formData.append("files", new Blob([audioFile.buffer], { type: audioFile.mimetype }), audioFile.originalname || "reference.webm");
+    // Sanitize the client-supplied filename before forwarding it to ElevenLabs.
+    // originalname is derived from the Content-Disposition header and is fully
+    // user controlled. Strip directory separators and reduce the name to a safe
+    // character set so it cannot be used for path traversal or header injection.
+    const safeFileName = sanitizeUploadFileName(audioFile.originalname);
+    formData.append("files", new Blob([audioFile.buffer], { type: audioFile.mimetype }), safeFileName);
 
     const elevenResponse = await fetch(`${ELEVENLABS_BASE_URL}/voices/add`, {
       method: "POST",
@@ -124,8 +157,17 @@ export async function cloneVoice(request, response, next) {
 
 export async function speak(request, response, next) {
   try {
-    const apiKey = requireApiKey(request);
-    const { text, voice_id: voiceId } = request.body;
+    const {
+  text,
+  voice_id: voiceId,
+  language_code,
+  voice_settings
+} = request.body;
+
+    if (!getIsMock()) {
+      // Only require a real API key when not in mock mode.
+      requireApiKey(request);
+    }
 
     if (!text || !voiceId) {
       response.status(400).json({ error: "Both text and voice_id are required." });
@@ -157,15 +199,11 @@ export async function streamSpeech(request, response, next) {
         Accept: "audio/mpeg"
       },
       body: JSON.stringify({
-        text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.8,
-          style: 0.2,
-          use_speaker_boost: true
-        }
-      })
+  text,
+  model_id: "eleven_multilingual_v2",
+  language_code,
+  voice_settings: mergedSettings
+})
     });
 
     if (!elevenResponse.ok) {
@@ -193,3 +231,11 @@ export async function streamSpeech(request, response, next) {
     next(error);
   }
 }
+
+export function getStatus(request, response) {
+  response.json({
+    isMock: getIsMock(),
+    hasServerKey: Boolean(process.env.ELEVENLABS_API_KEY?.trim())
+  });
+}
+

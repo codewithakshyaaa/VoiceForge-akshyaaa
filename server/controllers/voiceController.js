@@ -215,7 +215,7 @@ export async function streamSpeech(request, response, next) {
   text,
   model_id: "eleven_multilingual_v2",
   language_code,
-  voice_settings: mergedSettings
+  voice_settings: voice_settings
 })
     });
 

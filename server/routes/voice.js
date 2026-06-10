@@ -9,5 +9,6 @@ const router = Router();
 router.post("/clone", upload.single("audio"), cloneVoice);
 router.post("/speak", speak);
 router.get("/speak/stream", streamSpeech);
+router.get("/status", getStatus);
 
 export default router;

@@ -38,9 +38,15 @@ const PENDING_STREAM_TTL_MS = parseBoundedNumber(
 // request cannot exhaust process memory, since uploaded buffers are held
 // in-memory in `voiceStore`. Also restrict to audio MIME types since the
 // buffer is forwarded to the Chatterbox space as a reference recording.
+//
+// This must stay in sync with the multer file-size limit configured on the
+// /api/voice/clone route (12 MB) - otherwise files between the two limits
+// pass multer but get rejected here with a different status/message, which
+// is confusing for callers. If you change the multer limit, change this
+// default too (or vice versa).
 const MAX_VOICE_UPLOAD_BYTES = parseBoundedNumber(
   process.env.MAX_VOICE_UPLOAD_BYTES,
-  10 * 1024 * 1024, // 10 MB
+  12 * 1024 * 1024, // 12 MB - matches the multer limit on the clone route
   1
 );
 const ALLOWED_AUDIO_MIME_PREFIX = "audio/";
@@ -253,9 +259,11 @@ export async function cloneVoice(request, response, next) {
       return;
     }
 
-    // Fix: reject oversized or non-audio uploads before buffering them in
-    // memory. Without this, any client could push MAX_STORED_VOICES worth
-    // of arbitrarily large files (or non-audio files) into `voiceStore`.
+    // Fix: reject oversized or non-audio uploads before persisting them to
+    // voiceStore. Multer has already buffered the file into memory by this
+    // point, but without this check any client could still push
+    // MAX_STORED_VOICES worth of arbitrarily large files (or non-audio
+    // files) into `voiceStore`, where they'd be retained for VOICE_STORE_TTL_MS.
     if (!audioFile.mimetype || !audioFile.mimetype.startsWith(ALLOWED_AUDIO_MIME_PREFIX)) {
       response.status(400).json({ error: "Reference audio must be an audio file." });
       return;
@@ -497,13 +505,20 @@ export async function streamSpeech(request, response, next) {
 
     // Fix (replay protection): decryptToken only checks that the token is
     // authentic and not expired - it does not check that it hasn't already
-    // been consumed. Without this check, the same token could be replayed
-    // any number of times within its 60s validity window, each replay
-    // triggering a full (costly) Chatterbox generation. pendingStreams
-    // entries are deleted the first time a token is used (see the `finally`
-    // block below and the mock branch), so a missing entry means the token
-    // was already redeemed.
-    if (!speechId || !pendingStreams.has(speechId)) {
+    // been consumed. Previously this only *checked* pendingStreams.has(),
+    // and the entry wasn't removed until the `finally` block after
+    // generation completed - so two replays arriving within that window
+    // (or within the 60s token validity window generally) could both pass
+    // the check and each trigger a full, costly Chatterbox generation.
+    //
+    // Fix: consume (delete) the pending entry atomically right here, before
+    // any async work starts. A missing/undefined entry means the token was
+    // already redeemed (or never existed), so we 410. The later cleanup
+    // calls to deletePendingStream() elsewhere in this handler are now
+    // no-ops for the happy path, but are kept as a safety net for the
+    // abort/mock code paths.
+    const pendingEntry = speechId ? deletePendingStream(speechId) : undefined;
+    if (!pendingEntry) {
       response.status(410).json({
         error: "This speech token has already been used or has expired. Please request a new one."
       });

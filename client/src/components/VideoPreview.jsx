@@ -11,7 +11,11 @@ export default React.forwardRef(function VideoPreview({
   isSpeaking,
   onSpeakingChange,
   calibration = { xOffset: 0, yOffset: 0, scale: 1.0 },
-  isCalibrating = false
+  isCalibrating = false,
+  activeText = "",
+  subtitlesEnabled = true,
+  subtitleFontSize = "medium",
+  subtitleBgOpacity = 0.6
 }, ref) {
   const videoRef = React.useRef(null);
   const animationRef = React.useRef(null);
@@ -32,6 +36,27 @@ export default React.forwardRef(function VideoPreview({
   const segmenterRef = React.useRef(null);
   const isSegmentingRef = React.useRef(false);
   const maskCanvasRef = React.useRef(null);
+
+  const activeTextRef = React.useRef(activeText);
+  const subtitlesEnabledRef = React.useRef(subtitlesEnabled);
+  const subtitleFontSizeRef = React.useRef(subtitleFontSize);
+  const subtitleBgOpacityRef = React.useRef(subtitleBgOpacity);
+
+  React.useEffect(() => {
+    activeTextRef.current = activeText;
+  }, [activeText]);
+
+  React.useEffect(() => {
+    subtitlesEnabledRef.current = subtitlesEnabled;
+  }, [subtitlesEnabled]);
+
+  React.useEffect(() => {
+    subtitleFontSizeRef.current = subtitleFontSize;
+  }, [subtitleFontSize]);
+
+  React.useEffect(() => {
+    subtitleBgOpacityRef.current = subtitleBgOpacity;
+  }, [subtitleBgOpacity]);
 
   React.useEffect(() => {
     async function initSegmenter() {
@@ -164,6 +189,72 @@ export default React.forwardRef(function VideoPreview({
     let lastSyncTime = 0;
     let audioTimeOffset = null;
 
+    function drawSubtitles(ctx, text, fontSettings, bgOpacity) {
+      if (!text) return;
+      
+      const canvasWidth = ctx.canvas.width;
+      const canvasHeight = ctx.canvas.height;
+      
+      let fontSize = 24;
+      if (fontSettings === "small") fontSize = 18;
+      if (fontSettings === "large") fontSize = 32;
+      
+      ctx.save();
+      ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      
+      const maxTextWidth = canvasWidth * 0.8;
+      const words = text.split(" ");
+      const lines = [];
+      let currentLine = "";
+      
+      for (let n = 0; n < words.length; n++) {
+        const testLine = currentLine + words[n] + " ";
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxTextWidth && n > 0) {
+          lines.push(currentLine.trim());
+          currentLine = words[n] + " ";
+        } else {
+          currentLine = testLine;
+        }
+      }
+      lines.push(currentLine.trim());
+      
+      const lineHeight = fontSize * 1.35;
+      const totalHeight = lines.length * lineHeight;
+      const paddingX = 24;
+      const paddingY = 14;
+      
+      const boxWidth = Math.min(canvasWidth * 0.9, maxTextWidth + paddingX * 2);
+      const boxHeight = totalHeight + paddingY * 2;
+      
+      const boxX = (canvasWidth - boxWidth) / 2;
+      const boxY = canvasHeight * 0.82 - boxHeight / 2;
+      
+      if (bgOpacity > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${bgOpacity})`;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 8);
+        } else {
+          ctx.rect(boxX, boxY, boxWidth, boxHeight);
+        }
+        ctx.fill();
+      }
+      
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+      ctx.shadowBlur = 4;
+      
+      lines.forEach((line, index) => {
+        const lineY = boxY + paddingY + (index + 0.5) * lineHeight;
+        ctx.fillText(line, canvasWidth / 2, lineY);
+      });
+      
+      ctx.restore();
+    }
+
     function draw(timestamp) {
       context.fillStyle = bgColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
@@ -271,6 +362,15 @@ export default React.forwardRef(function VideoPreview({
           context.fill();
           context.restore();
         }
+      }
+
+      if (isSpeaking && subtitlesEnabledRef.current) {
+        drawSubtitles(
+          context,
+          activeTextRef.current,
+          subtitleFontSizeRef.current,
+          subtitleBgOpacityRef.current
+        );
       }
 
       if (waveRef.current && audioProcessorRef.current) {

@@ -75,7 +75,13 @@ function readSessionStorage(key, fallback) {
 
 export function useSpeechHistory() {
   // ── State ────────────────────────────────────────────────────────────────
-  const [history, setHistory] = useState(() => readStorage(HISTORY_KEY, []));
+  const [history, setHistory] = useState(() => {
+    const raw = readStorage(HISTORY_KEY, []);
+    return raw.map((item) => ({
+      ...item,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+    }));
+  });
   const [favorites, setFavorites] = useState(
     () => new Set(readStorage(FAVS_KEY, []))
   );
@@ -128,13 +134,13 @@ const addMessage = useCallback((text) => {
   const timestamp = Date.now();
 
   setSessionTranscript((prev) => [
-  ...prev,
-  {
-    text: trimmed,
-    timestamp,
-    status: "success",
-  },
-]);
+    ...prev,
+    {
+      text: trimmed,
+      timestamp,
+      status: "success",
+    },
+  ]);
 
   setHistory((prev) => {
     // Check existing message
@@ -143,8 +149,8 @@ const addMessage = useCallback((text) => {
     // Preserve existing ID if duplicate found, but update timestamp
     // so re-spoken messages sort correctly after a page reload.
     const updatedEntry = existing
-      ? { ...existing, timestamp: Date.now() }
-      : { id: crypto.randomUUID(), text: trimmed, timestamp: Date.now() };
+      ? { ...existing, timestamp: Date.now(), tags: Array.isArray(existing.tags) ? existing.tags : [] }
+      : { id: crypto.randomUUID(), text: trimmed, timestamp: Date.now(), tags: [] };
 
     // Move duplicate to top instead of recreating
     const updated = [
@@ -165,7 +171,7 @@ const addMessage = useCallback((text) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
-    });
+      });
   }, []);
 
   /**
@@ -188,6 +194,39 @@ const addMessage = useCallback((text) => {
     setSessionTranscript([]);
   }, []);
 
+  /**
+   * Adds a tag to a message.
+   */
+  const addTagToMessage = useCallback((id, tag) => {
+    const cleanTag = tag.trim().toLowerCase();
+    if (!cleanTag) return;
+    setHistory((prev) =>
+      prev.map((m) => {
+        if (m.id === id) {
+          const currentTags = m.tags || [];
+          if (!currentTags.includes(cleanTag)) {
+            return { ...m, tags: [...currentTags, cleanTag] };
+          }
+        }
+        return m;
+      })
+    );
+  }, []);
+
+  /**
+   * Removes a tag from a message.
+   */
+  const removeTagFromMessage = useCallback((id, tag) => {
+    setHistory((prev) =>
+      prev.map((m) => {
+        if (m.id === id) {
+          return { ...m, tags: (m.tags || []).filter((t) => t !== tag) };
+        }
+        return m;
+      })
+    );
+  }, []);
+
   return {
     history,
     favorites,
@@ -196,5 +235,7 @@ const addMessage = useCallback((text) => {
     removeMessage,
     toggleFavorite,
     clearHistory,
+    addTagToMessage,
+    removeTagFromMessage,
   };
 }

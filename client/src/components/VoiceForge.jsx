@@ -11,12 +11,15 @@ import { QuickReplies } from "./QuickReplies";
 import { SpeechHistory } from "./SpeechHistory";
 import { ToastContainer, useToast } from "./useToast.jsx";
 import { useSpeechHistory } from "../hooks/useSpeechHistory";
+import { LanguageSelector } from "./LanguageSelector.jsx";
+import { loadLanguage, persistLanguage } from "../utils/languages.js";
 
 const MAX_CHARS = 500;
 
 export default function VoiceForge() {
   const [inputText, setInputText] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [language, setLanguage] = useState(loadLanguage);
   const [historyOpen, setHistoryOpen] = useState(false);
   const drawerRef = useRef(null);
 
@@ -26,6 +29,7 @@ export default function VoiceForge() {
   const {
     history,
     favorites,
+    sessionTranscript,
     addMessage,
     removeMessage,
     toggleFavorite,
@@ -44,6 +48,7 @@ export default function VoiceForge() {
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = language;
     utterance.rate = 0.95;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -52,7 +57,7 @@ export default function VoiceForge() {
       showToast("Speech playback failed", "error");
     };
     window.speechSynthesis.speak(utterance);
-  }, [showToast]);
+  }, [showToast, language]);
 
   const handleSpeak = useCallback(() => {
     const text = inputText.trim();
@@ -62,9 +67,9 @@ export default function VoiceForge() {
       return;
     }
     speak(text);
-    addMessage(text);
+    addMessage(text, language);
     showToast("Saved to history", "success");
-  }, [inputText, speak, addMessage, showToast]);
+  }, [inputText, speak, addMessage, showToast, language]);
 
   const handleReplay = useCallback((text) => {
     speak(text);
@@ -101,10 +106,10 @@ export default function VoiceForge() {
   }, [inputText, showToast]);
 
   const handleQuickReply = useCallback((phrase) => {
-    setInputText(phrase);
-    textareaRef.current?.focus();
-    showToast("Quick reply loaded", "success");
-  }, [showToast]);
+    speak(phrase);
+    addMessage(phrase, language);
+    showToast("Quick reply sent", "success");
+  }, [speak, addMessage, showToast, language]);
 
   const handleKeyDown = useCallback((event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -134,6 +139,9 @@ export default function VoiceForge() {
       setAnnouncement("");
     }
   }, [charsLeft]);
+  useEffect(() => {
+    persistLanguage(language);
+  }, [language]);
 
   function getCounterColor() {
     if (charsLeft < 50)  return "text-red-500";
@@ -176,6 +184,7 @@ export default function VoiceForge() {
         <SpeechHistory
           history={history}
           favorites={favorites}
+          sessionTranscript={sessionTranscript}
           onReuse={(text) => { handleReuse(text); setHistoryOpen(false); }}
           onReplay={handleReplay}
           onToggleFav={toggleFavorite}
@@ -223,7 +232,7 @@ export default function VoiceForge() {
           onUnpin={toggleFavorite}
         />
 
-        <QuickReplies onSelect={handleQuickReply} />
+        <QuickReplies onSelect={handleQuickReply} showToast={showToast} />
 
         <div className="flex flex-1 flex-col gap-3 overflow-auto p-5 dark:bg-black">
           <div className="flex items-center justify-between">
@@ -275,6 +284,16 @@ export default function VoiceForge() {
           </p>
 
           <VoiceQuickSettings />
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="vf-language" className="text-sm font-medium text-neutral-600 dark:text-neutral-300">Language:</label>
+            <LanguageSelector
+              id="vf-language"
+              value={language}
+              onChange={setLanguage}
+              compact
+            />
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button

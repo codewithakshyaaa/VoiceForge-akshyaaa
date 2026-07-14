@@ -39,6 +39,32 @@ export default function VoiceForge() {
 
   const { toasts, showToast } = useToast();
 
+  const handleAddToQuickReplies = useCallback((text) => {
+    try {
+      const saved = localStorage.getItem("vf_quick_replies");
+      let currentReplies = [];
+      if (saved) {
+        currentReplies = JSON.parse(saved);
+      }
+      if (currentReplies.some((r) => r.phrase.toLowerCase() === text.toLowerCase())) {
+        showToast("Already in Quick Replies", "error");
+        return;
+      }
+      const newReply = {
+        id: Math.random().toString(36).substr(2, 9),
+        label: text.length > 25 ? text.slice(0, 22) + "..." : text,
+        phrase: text,
+        category: "General",
+      };
+      const updated = [...currentReplies, newReply];
+      localStorage.setItem("vf_quick_replies", JSON.stringify(updated));
+      window.dispatchEvent(new Event("voiceforge:quickRepliesChanged"));
+      showToast("Added to Quick Replies", "success");
+    } catch (err) {
+      showToast("Failed to add to Quick Replies", "error");
+    }
+  }, [showToast]);
+
   const speak = useCallback((text) => {
     if (!text.trim()) return;
 

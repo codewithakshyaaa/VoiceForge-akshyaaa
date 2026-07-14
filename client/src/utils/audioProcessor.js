@@ -1,4 +1,5 @@
 import Meyda from "meyda";
+import { PitchShifter } from "./pitchShifter.js";
 
 /**
  * Extracts Mel-spectrogram features from an HTMLMediaElement using the Web Audio API.
@@ -9,8 +10,13 @@ export class AudioProcessor {
     this.audioContext = null;
     this.source = null;
     this.analyzer = null;
+    this.analyser = null; // AnalyserNode for audio visualization
     this.currentMelSpectrogram = null;
     this.currentVolume = 0;
+    this.bassFilter = null;
+    this.midFilter = null;
+    this.trebleFilter = null;
+    this.pitchShifter = null;
   }
 
   /**
@@ -78,6 +84,26 @@ export class AudioProcessor {
   }
 
   /**
+   * Returns real-time frequency data mapped to 5 frequency bands.
+   * @returns {Uint8Array} Array of 5 frequency levels (0-255).
+   */
+  getFrequencyData() {
+    if (!this.analyser) {
+      return new Uint8Array(5).fill(0);
+    }
+    const bufferLength = this.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    this.analyser.getByteFrequencyData(dataArray);
+
+    const bars = new Uint8Array(5);
+    const step = Math.floor(bufferLength / 5) || 1;
+    for (let i = 0; i < 5; i++) {
+      bars[i] = dataArray[i * step] || 0;
+    }
+    return bars;
+  }
+
+  /**
    * Returns the most recently extracted mel-spectrogram.
    * Format expected by Wav2Lip ONNX is usually [batch_size, 1, 80, 16] (example).
    * @returns {Float32Array|null}
@@ -117,6 +143,36 @@ export class AudioProcessor {
     if (this.audioContext && this.audioContext.state !== "closed") {
       this.audioContext.close();
       this.audioContext = null;
+    }
+  }
+
+  setBass(gain) {
+    if (this.bassFilter) {
+      this.bassFilter.gain.value = gain;
+    }
+  }
+
+  setMid(gain) {
+    if (this.midFilter) {
+      this.midFilter.gain.value = gain;
+    }
+  }
+
+  setTreble(gain) {
+    if (this.trebleFilter) {
+      this.trebleFilter.gain.value = gain;
+    }
+  }
+
+  setPitch(pitch) {
+    if (this.pitchShifter) {
+      this.pitchShifter.setPitch(pitch);
+    }
+  }
+
+  setSpeed(speed, audioElement) {
+    if (audioElement) {
+      audioElement.playbackRate = speed;
     }
   }
 }

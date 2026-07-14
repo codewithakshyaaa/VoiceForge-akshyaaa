@@ -33,71 +33,31 @@ export class AudioProcessor {
       await this.audioContext.resume();
     }
 
-    // Prevent re-creating the source node if it already exists for this element
-    if (!audioElement.dataset.sourceCreated) {
-      this.source = this.audioContext.createMediaElementSource(audioElement);
-      audioElement.dataset.sourceCreated = "true";
-    }
-
-    // Clean up old analyser node and connections
-    if (this.analyser) {
-      try {
-        this.source.disconnect(this.analyser);
-      } catch (e) {}
-      this.analyser.disconnect();
-    }
-
-    this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 32; // Yields 16 frequency bands
-
-    // Clean up old direct connections to destination
-    try {
-      this.source.disconnect(this.audioContext.destination);
-    } catch (e) {}
-
-    // Create filters and pitch shifter
-    this.bassFilter = this.audioContext.createBiquadFilter();
-    this.bassFilter.type = "lowshelf";
-    this.bassFilter.frequency.value = 200;
-
-    this.midFilter = this.audioContext.createBiquadFilter();
-    this.midFilter.type = "peaking";
-    this.midFilter.frequency.value = 1000;
-    this.midFilter.Q.value = 1.0;
-
-    this.trebleFilter = this.audioContext.createBiquadFilter();
-    this.trebleFilter.type = "highshelf";
-    this.trebleFilter.frequency.value = 4000;
-
-    this.pitchShifter = new PitchShifter(this.audioContext);
-
-    // Apply saved configurations
-    try {
-      const saved = JSON.parse(localStorage.getItem("voiceforge:voiceSettings")) || {};
-      this.bassFilter.gain.value = typeof saved.dspBass === "number" ? saved.dspBass : 0;
-      this.midFilter.gain.value = typeof saved.dspMid === "number" ? saved.dspMid : 0;
-      this.trebleFilter.gain.value = typeof saved.dspTreble === "number" ? saved.dspTreble : 0;
-      this.pitchShifter.setPitch(typeof saved.dspPitch === "number" ? saved.dspPitch : 1.0);
-      if (typeof saved.dspSpeed === "number") {
-        audioElement.playbackRate = saved.dspSpeed;
-      }
-    } catch (e) {
-      console.warn("Failed to load initial voice modifier values:", e);
-    }
-
-    // Connect DSP chain:
-    // source -> analyser
-    // source -> bass -> mid -> treble -> pitchShifter.input
-    // pitchShifter.output -> destination
-    this.source.connect(this.analyser);
-    this.source.connect(this.bassFilter);
-    this.bassFilter.connect(this.midFilter);
-    this.midFilter.connect(this.trebleFilter);
-    this.trebleFilter.connect(this.pitchShifter.input);
-    this.pitchShifter.output.connect(this.audioContext.destination);
-
     if (this.analyzer) {
       this.analyzer.stop();
+      this.analyzer = null;
+    }
+
+    // Clean up previous source node connection to prevent memory leak
+    if (this.source) {
+      this.source.disconnect();
+      this.source = null;
+    }
+
+    // Prevent re-creating the source node if it already exists for this element.
+    // We map the node to the element's lifecycle using a direct property.
+    if (audioElement._audioSourceNode) {
+      this.source = audioElement._audioSourceNode;
+      try {
+        this.source.connect(this.audioContext.destination);
+      } catch (e) {
+        // Safe fallback if already connected
+      }
+    } else {
+      this.source = this.audioContext.createMediaElementSource(audioElement);
+      // Connect to destination so we can still hear it
+      this.source.connect(this.audioContext.destination);
+      audioElement._audioSourceNode = this.source;
     }
 
     // Configure Meyda to extract the melSpectrogram
@@ -176,26 +136,9 @@ export class AudioProcessor {
       this.analyzer.stop();
       this.analyzer = null;
     }
-    if (this.analyser) {
-      this.analyser.disconnect();
-      this.analyser = null;
-    }
-    if (this.bassFilter) {
-      this.bassFilter.disconnect();
-      this.bassFilter = null;
-    }
-    if (this.midFilter) {
-      this.midFilter.disconnect();
-      this.midFilter = null;
-    }
-    if (this.trebleFilter) {
-      this.trebleFilter.disconnect();
-      this.trebleFilter = null;
-    }
-    if (this.pitchShifter) {
-      if (this.pitchShifter.input) this.pitchShifter.input.disconnect();
-      if (this.pitchShifter.output) this.pitchShifter.output.disconnect();
-      this.pitchShifter = null;
+    if (this.source) {
+      this.source.disconnect();
+      this.source = null;
     }
     if (this.audioContext && this.audioContext.state !== "closed") {
       this.audioContext.close();

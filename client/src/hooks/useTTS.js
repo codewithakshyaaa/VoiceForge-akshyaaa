@@ -65,6 +65,58 @@ export default function useTTS() {
     setError("");
     setStatus("speaking");
 
+    const apiKey = getApiKey();
+    if (!apiKey || apiKey === "mock") {
+      try {
+        // Generate a synthesized beep/melody to mock speech audio locally
+        const duration = Math.max(1.0, Math.min(8.0, text.length * 0.06));
+        const offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100 * duration, 44100);
+        
+        const osc = offlineCtx.createOscillator();
+        const gain = offlineCtx.createGain();
+        
+        osc.type = "sine";
+        
+        // Pitch modulation simulating speaking sweeps
+        osc.frequency.setValueAtTime(180, 0);
+        for (let t = 0.1; t < duration; t += 0.2) {
+          const freq = 150 + Math.sin(t * 10) * 80 + Math.random() * 20;
+          osc.frequency.linearRampToValueAtTime(freq, t);
+        }
+        
+        // Amplitude modulation simulating word and syllable boundaries
+        gain.gain.setValueAtTime(0, 0);
+        let isPeak = true;
+        for (let t = 0.05; t < duration - 0.05; t += 0.15) {
+          const vol = isPeak ? (0.4 + Math.random() * 0.4) : 0.02;
+          gain.gain.linearRampToValueAtTime(vol, t);
+          isPeak = !isPeak;
+        }
+        gain.gain.linearRampToValueAtTime(0, duration);
+
+        osc.connect(gain);
+        gain.connect(offlineCtx.destination);
+        
+        osc.start(0);
+        osc.stop(duration);
+
+        const renderedBuffer = await offlineCtx.startRendering();
+        const wavBlob = audioBufferToWav(renderedBuffer);
+        const nextAudioUrl = URL.createObjectURL(wavBlob);
+
+        setAudioUrl((previous) => {
+          if (previous) URL.revokeObjectURL(previous);
+          return nextAudioUrl;
+        });
+        setStatus("ready");
+        return { audioUrl: nextAudioUrl };
+      } catch (err) {
+        setError(err.message || "Local mock speech synthesis failed.");
+        setStatus("error");
+        throw err;
+      }
+    }
+
     try {
       const voiceSettings = loadVoiceSettings();
 
